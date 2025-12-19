@@ -1,0 +1,546 @@
+import yfinance as yf
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+##########################################################
+########### STEP 1 : DATA COLLECTION #####################
+##########################################################
+
+
+# Tickers list (Add others or change after group meeting)
+tickers = ['GOOG', 'META', 'MSFT', 'ORCL']
+
+# Rows to create the dataframe later
+data_rows = []
+
+# Grab data from yfinance for each ticker
+for ticker in tickers:
+    print(f"\n--- Downloading data for {ticker} ---")
+
+    # This is just to make code easier to write / read
+    company = yf.Ticker(ticker)
+
+    # Grab income statement and extract rev, cogs, net income and EBITDA
+    income_stmt = company.income_stmt
+
+    years = 4
+
+    revenue = []
+    cogs = []
+    net_income = []
+    ebitda = []
+
+    for i in range(years):
+        if i < len(income_stmt.columns):
+            rev = income_stmt.loc[
+                'Total Revenue' , income_stmt.columns[i]]
+            revenue.append(rev)
+
+            # This made me lose my hair why do they not call it COGS lol
+            cog = income_stmt.loc[
+                'Cost Of Revenue', income_stmt.columns[i]]
+            cogs.append(cog)
+
+            ni = income_stmt.loc['Net Income', income_stmt.columns[i]]
+            net_income.append(ni)
+
+            ebitda_val = income_stmt.loc['EBITDA', income_stmt.columns[i]]
+            ebitda.append(ebitda_val)
+
+    # Grab balance sheet and extract total assets, total liabilities, current assets, current liabilities, total debt, and cash equivalents
+    balance_sheet = company.balance_sheet
+
+    total_assets = []
+    total_liabilities = []
+    current_assets = []
+    current_liabilities = []
+    total_debt = []
+    cash = []
+
+    for i in range(years):
+        if i < len(balance_sheet.columns):
+            assets = balance_sheet.loc['Total Assets', balance_sheet.columns[i]]
+            total_assets.append(assets)
+
+            liabilities = balance_sheet.loc['Total Liabilities Net Minority Interest', balance_sheet.columns[i]]
+            total_liabilities.append(liabilities)
+
+            curr_assets = balance_sheet.loc['Current Assets', balance_sheet.columns[i]]
+            current_assets.append(curr_assets)
+
+            curr_liabilities = balance_sheet.loc['Current Liabilities', balance_sheet.columns[i]]
+            current_liabilities.append(curr_liabilities)
+
+            debt = balance_sheet.loc['Total Debt', balance_sheet.columns[i]]
+            total_debt.append(debt)
+
+            cash_val = balance_sheet.loc['Cash And Cash Equivalents', balance_sheet.columns[i]]
+            cash.append(cash_val)
+
+    # Grab cash flow and extract operating CF
+    cash_flow = company.cashflow
+
+    operating_cf = []
+
+    for i in range(years):
+        if i < len(cash_flow.columns):
+            ocf = cash_flow.loc['Operating Cash Flow', cash_flow.columns[i]]
+            operating_cf.append(ocf)
+
+    # Get the year from income_stmt columns and stock price at said date then create one row per year
+    for i in range(years):
+        if i < len(income_stmt.columns):
+            date = income_stmt.columns[i]
+
+            # Convert date to string (doesn't work otherwise)
+            date_str = date.strftime("%Y-%m-%d")
+
+            # 7-day window around the financial statement date
+            hist = company.history(
+                start=(date - pd.Timedelta(days=4)),
+                end=(date + pd.Timedelta(days=3))
+            )
+
+            # Locate the closest trading day closing price (just in case)
+            price_at_date = hist.loc[:date_str]["Close"].iloc[-1]
+
+            row = {
+                'Ticker': ticker,
+                'Date': date,
+                'Year': date.year,
+                'Revenue': revenue[i],
+                'COGS': cogs[i],
+                'Net Income': net_income[i],
+                'EBITDA': ebitda[i],
+                'Total Assets': total_assets[i],
+                'Total Liabilities': total_liabilities[i],
+                'Current Assets': current_assets[i],
+                'Current Liabilities': current_liabilities[i],
+                'Total Debt': total_debt[i],
+                'Cash and Cash Equivalents': cash[i],
+                'Operating Cash Flow': operating_cf[i],
+                'Stock Price': price_at_date
+            }
+            data_rows.append(row)
+
+    print(f"Data loaded for {ticker}")
+
+# Create dataframe from data_rows
+MainDf = pd.DataFrame(data_rows)
+
+# Print the DataFrame
+print("\n\n------FINANCIAL DATA SUMMARY------\n")
+
+print(MainDf.to_string(index=False))
+
+print("Data successfully collected and stored!")
+
+#############################################################
+############ STEP 2 : FINANCIAL RATIOS ######################
+#############################################################
+
+sec_df = pd.read_excel("SEC_10K_Data.xlsx")
+
+
+# Merge based on Ticker and Date
+MainDf = MainDf.merge(sec_df, on=["Ticker", "Date"], how="left")
+
+MainDf['Market Cap'] = MainDf['Stock Price'] * MainDf['Shares Outstanding']
+
+# Profitability Ratios
+MainDf['Gross Margin'] = (MainDf['Revenue'] - MainDf['COGS']) / MainDf['Revenue']
+MainDf['Net Margin'] = MainDf['Net Income'] / MainDf['Revenue']
+MainDf['ROA'] = MainDf['Net Income'] / MainDf['Total Assets']
+MainDf['Operating Margin'] = MainDf['Operating Cash Flow'] / MainDf['Revenue']
+
+# Leverage Ratios
+MainDf['Debt-to-Assets'] = MainDf['Total Liabilities'] / MainDf['Total Assets']
+MainDf['Debt-to-Equity'] = MainDf['Total Liabilities'] / (MainDf['Total Assets'] - MainDf['Total Liabilities'])
+
+# Liquidity Ratio
+MainDf['Current Ratio'] = MainDf['Current Assets'] / MainDf['Current Liabilities']
+
+# Efficiency Ratio
+MainDf['Asset Turnover'] = MainDf['Revenue'] / MainDf['Total Assets']
+
+
+# Valuation Ratios
+MainDf['P/E Ratio'] = MainDf['Stock Price'] / MainDf['EPS (Diluted)']
+MainDf['Enterprise Value'] = MainDf['Market Cap'] + MainDf['Total Debt'] - MainDf['Cash and Cash Equivalents']
+MainDf['EV/EBITDA'] = MainDf['Enterprise Value'] / MainDf['EBITDA']
+
+
+print("\n\n------FINANCIAL RATIOS DATAFRAME------\n")
+print(MainDf.to_string(index=False))
+print("\nFinancial ratios successfully computed!")
+
+
+
+#########################################################
+############ STEP 3 : VISUALIZATION  ###################
+########################################################
+
+
+# Universal plot function to make code easier to read and write
+def plot_ratio(ratio_name):
+
+    plt.figure(figsize=(10, 6))
+
+    for ticker in tickers:
+        ticker_data = MainDf[MainDf['Ticker'] == ticker]
+
+        # Sort by year and get years and values for each specific ticker
+        # This is to avoid matplotlib dimension error and include all years in graphs
+        ticker_data_sorted = ticker_data.sort_values('Year')
+        ticker_years = ticker_data_sorted['Year'].tolist()
+        ratio_values = ticker_data_sorted[ratio_name].tolist()
+
+        # Plot each company with its own year range
+        plt.plot(ticker_years, ratio_values, marker='.', label=ticker)
+
+    # Title, labels, and legend
+    plt.title(f'{ratio_name} Over Time', fontsize=14)
+    plt.xlabel('Year', fontsize=12)
+    plt.ylabel(ratio_name, fontsize=12)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+
+    # Show the plots
+    plt.show()
+
+
+# List of ratios to plot and loop over it
+ratios_to_plot = [
+    'Gross Margin',
+    'Net Margin',
+    'ROA',
+    'Operating Margin',
+    'Debt-to-Assets',
+    'Debt-to-Equity',
+    'Current Ratio',
+    'P/E Ratio',
+    'EV/EBITDA',
+    'Asset Turnover'
+]
+
+print("Generating ratio plots...\n")
+
+for ratio in ratios_to_plot:
+    plot_ratio(ratio)
+
+print("All ratio plots generated successfully!")
+
+####################################################
+########## STEP 4 : FORECASTING  ###################
+####################################################
+
+
+# Items to forecast using linear regression
+forecast_items = ['Revenue', 'COGS', 'Net Income', 'Total Assets', 'Total Liabilities', 'Current Assets',
+                  'Current Liabilities', 'Total Debt', 'Cash and Cash Equivalents', 'Operating Cash Flow', 'EBITDA',
+                  'Stock Price', 'Shares Outstanding']
+
+#  List to store forecast rows
+forecast_rows = []
+
+# Get the values for each company from MainDf
+for ticker in tickers:
+    subset = MainDf[MainDf['Ticker'] == ticker].sort_values('Year')
+
+    print(f"\n--- Forecasting for {ticker} ---")
+
+    # Only forecast if we have at least 2 years of data
+    if len(subset) >= 2:
+        x_reg = np.arange(len(subset))
+
+        # Generate 2 forecast years
+        for i in range(1, 3):
+            new_year = int(subset['Year'].max() + i)
+            new_row = {'Ticker': ticker, 'Year': new_year, 'Type': 'Forecast'}
+
+            # Linear regression: For each item, fit a line and predict future value
+            # For some items it might be wrong but it would take way too much time & data to be thorough about this
+            for item in forecast_items:
+                y_reg = subset[item].values
+                slope, intercept = np.polyfit(x_reg, y_reg, 1)
+                prediction = slope * (len(subset) + i - 1) + intercept
+                new_row[item] = prediction
+
+            forecast_rows.append(new_row)
+
+    print(f"Forecasts generated for {ticker}")
+
+# Create dataframe from forecasted rows
+df_forecast = pd.DataFrame(forecast_rows)
+
+# Add a type column to DF to show which are historical and which are forecasts
+MainDf['Type'] = 'Historical'
+
+# Concatenate historical and forecast data
+MainDf_Forecast = pd.concat([MainDf, df_forecast], ignore_index=True)
+
+# Recompute ratios for all years (historical + forecasted)
+
+MainDf_Forecast['Gross Margin'] = (MainDf_Forecast['Revenue'] - MainDf_Forecast['COGS']) / MainDf_Forecast['Revenue']
+MainDf_Forecast['Net Margin'] = MainDf_Forecast['Net Income'] / MainDf_Forecast['Revenue']
+MainDf_Forecast['ROA'] = MainDf_Forecast['Net Income'] / MainDf_Forecast['Total Assets']
+MainDf_Forecast['Operating Margin'] = MainDf_Forecast['Operating Cash Flow'] / MainDf_Forecast['Revenue']
+MainDf_Forecast['Debt-to-Assets'] = MainDf_Forecast['Total Liabilities'] / MainDf_Forecast['Total Assets']
+MainDf_Forecast['Debt-to-Equity'] = MainDf_Forecast['Total Liabilities'] / (
+            MainDf_Forecast['Total Assets'] - MainDf_Forecast['Total Liabilities'])
+MainDf_Forecast['Current Ratio'] = MainDf_Forecast['Current Assets'] / MainDf_Forecast['Current Liabilities']
+MainDf_Forecast['Asset Turnover'] = MainDf_Forecast['Revenue'] / MainDf_Forecast['Total Assets']
+MainDf_Forecast['EPS (Diluted)'] = MainDf_Forecast['Net Income'] / MainDf_Forecast['Shares Outstanding']
+MainDf_Forecast['Market Cap'] = MainDf_Forecast['Stock Price'] * MainDf_Forecast['Shares Outstanding']
+MainDf_Forecast['Enterprise Value'] = MainDf_Forecast['Market Cap'] + MainDf_Forecast['Total Debt'] - MainDf_Forecast[
+    'Cash and Cash Equivalents']
+MainDf_Forecast['P/E Ratio'] = MainDf_Forecast['Stock Price'] / MainDf_Forecast['EPS (Diluted)']
+MainDf_Forecast['EV/EBITDA'] = MainDf_Forecast['Enterprise Value'] / MainDf_Forecast['EBITDA']
+
+print("\n\n------FORECASTED FINANCIAL DATA------\n")
+print(MainDf_Forecast.to_string(index=False))
+
+print("\n Financial forecasts completed and ratios recomputed!")
+
+
+##################################################################
+########## STEP 5 : VISUALIZATION OF FORECASTS ###################
+##################################################################
+
+
+
+# THIS IS THE SAME CODE AS STEP 3 WE ONLY UPDATE THE DATAFRAME TO INCLUDE FORECASTS
+
+# Universal plot function to make code easier to read and write
+def plot_ratio(ratio_name):
+
+    plt.figure(figsize=(10, 6))
+
+    for ticker in tickers:
+        ticker_data = MainDf_Forecast[MainDf_Forecast['Ticker'] == ticker]
+
+        # Sort by year and get years and values for each specific ticker
+        # This is to avoid matplotlib dimension error and include all years in graphs
+        ticker_data_sorted = ticker_data.sort_values('Year')
+        ticker_years = ticker_data_sorted['Year'].tolist()
+        ratio_values = ticker_data_sorted[ratio_name].tolist()
+
+        # Plot each company with its own year range
+        plt.plot(ticker_years, ratio_values, marker='.', label=ticker)
+
+    # Title, labels, and legend
+    plt.title(f' Forecasted (last 2 years) {ratio_name} Over Time', fontsize=14)
+    plt.xlabel('Year', fontsize=12)
+    plt.ylabel(ratio_name, fontsize=12)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+
+    # Show the plots
+    plt.show()
+
+
+# List of ratios to plot and loop over it
+ratios_to_plot = [
+    'Gross Margin',
+    'Net Margin',
+    'ROA',
+    'Operating Margin',
+    'Debt-to-Assets',
+    'Debt-to-Equity',
+    'Current Ratio',
+    'P/E Ratio',
+    'EV/EBITDA',
+    'Asset Turnover'
+]
+
+print("Generating ratio plots...\n")
+
+for ratio in ratios_to_plot:
+    plot_ratio(ratio)
+
+print("All ratio plots generated successfully!")
+
+############################################################################
+########## STEP 6 : ESG SCORES ANALYSIS AND VISUALIZATION  #################
+############################################################################
+
+# Load ESG data from CSV file (Cannot confirm truthfulness of the esg data is but it's better than nothing to simulate)
+esg_csv = pd.read_csv("ESG Data.csv")
+
+# Convert tickers to uppercase to avoid error
+esg_csv['ticker'] = esg_csv['ticker'].str.upper()
+
+# This is the dictionary to store ESG scores for each company
+esg_scores = {}
+
+# Grabbing the  ESG scores from CSV for each ticker
+for ticker in tickers:
+    esg_row = esg_csv[esg_csv['ticker'] == ticker]
+
+    env_score = esg_row.iloc[0]['environment_score']
+    social_score = esg_row.iloc[0]['social_score']
+    governance_score = esg_row.iloc[0]['governance_score']
+    total_score = esg_row.iloc[0]['total_score']
+
+    esg_scores[ticker] = {
+            'environment': env_score,
+            'social': social_score,
+            'governance': governance_score,
+            'total': total_score
+        }
+
+    print(f" ESG data loaded for {ticker}")
+
+
+
+##################################################
+## 1. BUILD RESULTS DATAFRAME with ROA for 2022 ##
+##################################################
+
+target_year = 2022
+rows = []
+companies_list = list(esg_scores.keys())
+
+for ticker in companies_list:
+    # Find the 2022 data for this ticker
+    df_sel = MainDf[(MainDf["Ticker"] == ticker) & (MainDf["Year"] == target_year)]
+
+    if len(df_sel) > 0:
+
+        roa = df_sel.iloc[0]["ROA"]
+
+        rows.append({
+            "Ticker": ticker,
+            "Year": target_year,
+            "Environment Score": esg_scores[ticker]['environment'],
+            "Social Score": esg_scores[ticker]['social'],
+            "Governance Score": esg_scores[ticker]['governance'],
+            "Total ESG": esg_scores[ticker]['total'],
+            "ROA": roa
+        })
+
+ResultsDf = pd.DataFrame(rows)
+
+print("\n----- ESG RESULTS DATAFRAME -----\n")
+print(ResultsDf.to_string(index=False))
+
+
+
+
+###############################
+## 2. BAR CHART — ESG Scores ##
+###############################
+
+# Set index to Ticker so plotting is easier
+df = ResultsDf.set_index("Ticker")
+
+
+cols_to_plot = ["Environment Score", "Social Score", "Governance Score"]
+
+# This is to plot by groups of companies
+x = np.arange(len(df.index))
+width = 0.2  # width of each bar
+
+fig, ax = plt.subplots(figsize=(10, 6))
+
+# This is to plot the columns together
+for i, col in enumerate(cols_to_plot):
+    ax.bar(x + i*width, df[col], width, label=col)
+
+# Labels etc...
+ax.set_xlabel("Company")
+ax.set_ylabel("Score")
+ax.set_title("ESG Scores for each company (2022)")
+ax.set_xticks(x + width * (len(cols_to_plot)-1) / 2)
+ax.set_xticklabels(df.index)
+ax.legend()
+
+plt.tight_layout()
+plt.show()
+
+
+#################################
+## 3. ESG vs ROA SCATTER PLOTS ##
+#################################
+
+# Universal plotting function to make it easier
+def plot_esg_vs_roa(esg_column, title, color):
+
+    plt.figure(figsize=(10, 6))
+
+    x = ResultsDf["ROA"]
+    y = ResultsDf[esg_column]
+
+    # Scatter points
+    plt.scatter(x, y, s=140, alpha=0.8, color=color)
+
+    # Add the regression line
+    m, b = np.polyfit(x, y, 1)
+    plt.plot(x, m*x + b, color="black", linewidth=2, label=f"Trendline")
+
+    # Add ticker labels
+    for idx, row in ResultsDf.iterrows():
+        plt.text(row["ROA"] + 0.002, row[esg_column] + 5, row["Ticker"], fontsize=10)
+
+    plt.xlabel("ROA (%)", fontsize=12)
+    plt.ylabel(esg_column, fontsize=12)
+    plt.title(title, fontsize=14)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+# List of ESG components to plot with their colors
+esg_components = [
+    ("Environment Score", "Environment Score vs ROA (2022)", "green"),
+    ("Social Score", "Social Score vs ROA (2022)", "blue"),
+    ("Governance Score", "Governance Score vs ROA (2022)", "orange")
+]
+
+# Loop through each one
+for esg_col, plot_title, plot_color in esg_components:
+    plot_esg_vs_roa(esg_col, plot_title, plot_color)
+
+#####################
+## 4. ESG SUMMARY ##
+####################
+
+print("\n------ ESG SCORE SUMMARY ------\n")
+
+for ticker in companies_list:
+    print(f"{ticker}:")
+    print(f"  Environment: {esg_scores[ticker]['environment']:.2f}")
+    print(f"  Social: {esg_scores[ticker]['social']:.2f}")
+    print(f"  Governance: {esg_scores[ticker]['governance']:.2f}")
+    print(f"  Total ESG: {esg_scores[ticker]['total']:.2f}")
+    print()
+
+#################
+## 5. INSIGHTS ##
+#################
+
+print("------ ESG INSIGHTS ------\n")
+# Highest ESG
+max_esg_row = ResultsDf.loc[ResultsDf["Total ESG"].idxmax()]
+
+# Lowest ESG
+min_esg_row = ResultsDf.loc[ResultsDf["Total ESG"].idxmin()]
+
+print(f"Highest Total ESG: {max_esg_row['Ticker']} ({max_esg_row['Total ESG']:.2f})")
+print(f"Lowest Total ESG:  {min_esg_row['Ticker']} ({min_esg_row['Total ESG']:.2f})")
+
+
+# Highest ROA
+max_roa_row = ResultsDf.loc[ResultsDf["ROA"].idxmax()]
+
+# Lowest ROA
+min_roa_row = ResultsDf.loc[ResultsDf["ROA"].idxmin()]
+
+print(f"Highest ROA: {max_roa_row['Ticker']} ({max_roa_row['ROA']:.2f})")
+print(f"Lowest ROA:  {min_roa_row['Ticker']} ({min_roa_row['ROA']:.2f})")
+
+print("\n ESG analysis completed!")
