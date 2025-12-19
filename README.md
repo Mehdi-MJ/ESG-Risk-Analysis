@@ -5,19 +5,19 @@ This project was developed as a group assignment for the Data Science for Financ
 
 The project highlights a critical lesson in data science: the impact of sample size on correlation. While initial small-scale testing showed a positive trendline, expanding our dataset revealed a negative relationship between high ESG risk scores and financial efficiency.
 
-Data Sources & Methodology
+Data Sources & Methodology:
 To build our dataset, we integrated three distinct sources:
 
 Financial Data: Pulled via the yfinance API to obtain real-time market data.
 
-Historical Financials: For data points missing from the API, we manually parsed SEC 10-K filings to ensure a complete longitudinal dataset for ROA calculations.
+Historical Financials: For data points missing from the API, we manually parsed SEC 10-K filings to ensure a complete dataset for financial ratios calculations.
 
 ESG Risk Scores: Sourced from Kaggle. These scores represent the environmental, social, and governance risk levels of the companies involved.
 
-⚠️ Disclaimer
+⚠️ Disclaimer:
 The ESG risk scores used in this project are for illustrative and academic purposes only. We cannot certify the absolute accuracy or current validity of these scores, as ESG reporting standards vary significantly across providers.
 
-Technical Implementation
+Technical Implementation:
 Data Processing: We used Pandas to clean data and calculate financial ratios, specifically focusing on ROA (Net Income / Total Assets).
 
 Statistical Analysis: To determine the relationship between variables, we utilized numpy.polyfit to calculate and plot linear trendlines.
@@ -31,7 +31,7 @@ Phase 1: Small Sample Size (N=4)
 Initially, we analyzed a small group of "Big Tech" firms (GOOG, MSFT, META, ORCL). In this limited scope, the trendlines for Environment, Social, and Governance were all positive. This suggested that higher ESG risk scores were associated with higher ROA.
 
 Phase 2: Larger Sample Size (N=10+)
-Recognizing that the initial results might be skewed by the exceptional performance of market leaders, we expanded the dataset to include companies like ADBE, ACIW, ADSK, EA, PAYC, and MTCH.
+Recognizing that the initial results might be biased by the exceptional performance of market leaders, we expanded the dataset to include companies like Adobe, ACI Worldwide, Autodesk, Electronic Arts, Paycom Software, and Match Group.
 
 The Result: The trendlines inverted. With a broader sample, we observed a negative correlation.
 
@@ -42,6 +42,6 @@ Clone the repository.
 
 Install dependencies: pip install yfinance pandas numpy matplotlib.
 
-Run the Jupyter Notebook ESG_Finance_Analysis.ipynb.
+Run the Script: MainScript.py
 
 Contributors: Ismail Khalloufi, Zakaria El Halfi, Charaf El Maniani, Taha Farouki
